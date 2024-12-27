@@ -17,23 +17,39 @@ console.log("HTTP rollup_server url is " + rollupServer);
 const handleAdvance: AdvanceRequestHandler = async (data) => {
   console.log("Received advance request data " + JSON.stringify(data));
 
-  // Decode hex-encoded payload to UTF-8 string
-  const payloadStr =
-    data.payload && Buffer.from(data.payload.slice(2), "hex").toString("utf8");
-  const payload = payloadStr ? JSON.parse(payloadStr) : null;
-  const loanId: string | undefined = payload?.extractedParameters?.loanId;
-  if (!loanId) {
-    throw new Error("Loan ID is required");
+  try {
+    // Decode hex-encoded payload to UTF-8 string
+    const payloadStr =
+      data.payload &&
+      Buffer.from(data.payload.slice(2), "hex").toString("utf8");
+    console.log("payloadStr", payloadStr);
+    const payload = payloadStr ? JSON.parse(payloadStr) : null;
+    const loanId: string | undefined =
+      payload?.extractedParameters?.URL_PARAMS_1;
+    if (!loanId) {
+      throw new Error("Loan ID is required");
+    }
+
+    const loanAmount = 12000; // TODO: fetch from contract
+
+    const rawTransactions: string | undefined =
+      payload?.extractedParameters?.transactions;
+
+    if (!rawTransactions) {
+      throw new Error("Transactions are required");
+    }
+
+    const transactions = JSON.parse(rawTransactions) as Transaction[];
+
+    const interestRate = calculateRequiredInterestRate(
+      transactions,
+      loanAmount
+    );
+
+    console.log("Interest rate is " + interestRate);
+  } catch (e) {
+    console.log("Error processing advance request", e);
   }
-
-  const loanAmount = 12000; // TODO: fetch from contract
-
-  const transactions: Transaction[] =
-    payload?.extractedParameters?.transactions || [];
-
-  const interestRate = calculateRequiredInterestRate(transactions, loanAmount);
-
-  console.log("Interest rate is " + interestRate);
 
   return "accept";
 };

@@ -31,7 +31,7 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
       throw new Error("Loan ID is required");
     }
 
-    const loanAmount = await getLoanAmount(loanId, "0x0000000000000000000000000000000000000000"); // TODO: add loan contract
+    const loanAmount = await getLoanAmount(loanId, process.env.LOAN_CONTRACT_ADDRESS as `0x${string}`); // TODO: add loan contract
     if (!loanAmount) {
       throw new Error("Loan does not exist");
     }

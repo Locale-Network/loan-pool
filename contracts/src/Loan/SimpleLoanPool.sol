@@ -9,6 +9,9 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 
+/// @title SimpleLoanPool
+/// @notice A contract for managing simple loans with interest
+/// @dev Implements upgradeable pattern with access control
 contract SimpleLoanPool is
     Initializable,
     OwnableUpgradeable,
@@ -42,6 +45,10 @@ contract SimpleLoanPool is
     ////////////////////////////////////////////////
     // CONSTRUCTOR
     ////////////////////////////////////////////////
+    /// @notice Initializes the contract with owner, approvers and token
+    /// @param _owner Address of the contract owner
+    /// @param approvers Array of initial approver addresses
+    /// @param _token Address of the ERC20 token used for loans
     function initialize(
         address _owner,
         address[] memory approvers,
@@ -114,12 +121,10 @@ contract SimpleLoanPool is
     // FUNCTIONS
     ////////////////////////////////////////////////
 
-    /**
-     * @notice Allows the owner to transfer tokens held by this contract to a specified address
-     * @param to The recipient address
-     * @param amount The amount of tokens to transfer
-     * @return success Whether the transfer was successful
-     */
+    /// @notice Transfers tokens from the pool to a specified address
+    /// @param to The recipient address
+    /// @param amount The amount of tokens to transfer
+    /// @return success Whether the transfer was successful
     function transferFunds(
         address to,
         uint256 amount
@@ -127,6 +132,12 @@ contract SimpleLoanPool is
         return token.transfer(to, amount);
     }
 
+    /// @notice Creates a new loan record
+    /// @param _loanId Unique identifier for the loan
+    /// @param _borrower Address of the borrower
+    /// @param _amount Loan amount
+    /// @param _interestRate Interest rate for the loan
+    /// @param _repaymentRemainingMonths Number of months for repayment
     function createLoan(
         bytes32 _loanId,
         address _borrower,
@@ -141,13 +152,18 @@ contract SimpleLoanPool is
         loanIdToRepaymentRemainingMonths[_loanId] = _repaymentRemainingMonths;
     }
 
-	function activateLoan(bytes32 _loanId) external onlySystemOrPoolManager loanExists(_loanId) onlyInactiveLoan(_loanId) poolHasFunds(_amount) {
+	/// @notice Activates a created loan and transfers funds to borrower
+	/// @param _loanId Unique identifier for the loan
+	function activateLoan(bytes32 _loanId) external onlySystemOrPoolManager loanExists(_loanId) onlyInactiveLoan(_loanId) {
 		loanIdToActive[_loanId] = true;
 
 		uint256 amount = loanIdToAmount[_loanId];
 		token.transfer(loanIdToBorrower[_loanId], amount);
 	}
 
+	/// @notice Calculates the next repayment amount for a loan
+	/// @param _loanId Unique identifier for the loan
+	/// @return The calculated repayment amount
 	function getNextRepayment(bytes32 _loanId) external view returns (uint256) {
 		uint256 amount = loanIdToAmount[_loanId];
 		uint256 repaidAmount = loanIdToRepaymentAmount[_loanId];
@@ -158,6 +174,9 @@ contract SimpleLoanPool is
 		return remainingAmount + (remainingAmount * interestRate / 100) / repaymentRemainingMonths;
 	}
 
+    /// @notice Updates the interest rate for an active loan
+    /// @param _loanId Unique identifier for the loan
+    /// @param _interestRate New interest rate to set
     function updateLoanInterestRate(
         bytes32 _loanId,
         uint256 _interestRate
@@ -165,6 +184,9 @@ contract SimpleLoanPool is
         loanIdToInterestRate[_loanId] = _interestRate;
     }
 
+    /// @notice Updates the remaining months for loan repayment
+    /// @param _loanId Unique identifier for the loan
+    /// @param _repaymentRemainingMonths New number of remaining months
     function updateLoanRepaymentRemainingMonths(
         bytes32 _loanId,
         uint256 _repaymentRemainingMonths
@@ -172,6 +194,9 @@ contract SimpleLoanPool is
         loanIdToRepaymentRemainingMonths[_loanId] = _repaymentRemainingMonths;
     }
 
+    /// @notice Allows a borrower to make a repayment on their loan
+    /// @param _loanId Unique identifier for the loan
+    /// @param _amount Amount to repay
     function makeRepayment(
         bytes32 _loanId,
         uint256 _amount
@@ -199,6 +224,8 @@ contract SimpleLoanPool is
     ////////////////////////////////////////////////
     // UPGRADE
     ////////////////////////////////////////////////
+    /// @notice Authorizes an upgrade to a new implementation
+    /// @param newImplementation Address of the new implementation
     function _authorizeUpgrade(
         address newImplementation
     ) internal override onlyOwner {}

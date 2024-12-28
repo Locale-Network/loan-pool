@@ -1,6 +1,7 @@
 import createClient from "openapi-fetch";
 import { components, paths } from "./schema";
 import { calculateRequiredInterestRate, Transaction } from "./debt";
+import { getLoanAmount } from "./contracts/simpleLoanPool";
 
 type AdvanceRequestData = components["schemas"]["Advance"];
 type InspectRequestData = components["schemas"]["Inspect"];
@@ -30,7 +31,10 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
       throw new Error("Loan ID is required");
     }
 
-    const loanAmount = 12000; // TODO: fetch from contract
+    const loanAmount = await getLoanAmount(loanId, "0x0000000000000000000000000000000000000000"); // TODO: add loan contract
+    if (!loanAmount) {
+      throw new Error("Loan does not exist");
+    }
 
     const rawTransactions: string | undefined =
       payload?.extractedParameters?.transactions;
@@ -43,7 +47,7 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
 
     const interestRate = calculateRequiredInterestRate(
       transactions,
-      loanAmount
+      Number(loanAmount)
     );
 
     console.log("Interest rate is " + interestRate);

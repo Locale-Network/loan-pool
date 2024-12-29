@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 import { components, paths } from "./schema";
 import { calculateRequiredInterestRate, Transaction } from "./debt";
-import { getLoanAmount } from "./contracts/simpleLoanPool";
+import { getLoanAmount, updateLoanInterestRate } from "./contracts/simpleLoanPool";
 
 type AdvanceRequestData = components["schemas"]["Advance"];
 type InspectRequestData = components["schemas"]["Inspect"];
@@ -31,10 +31,12 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
       throw new Error("Loan ID is required");
     }
 
-    const loanAmount = await getLoanAmount(loanId, process.env.LOAN_CONTRACT_ADDRESS as `0x${string}`); // TODO: add loan contract
+    const loanAmount = await getLoanAmount(loanId, process.env.LOAN_CONTRACT_ADDRESS as `0x${string}`);
     if (!loanAmount) {
       throw new Error("Loan does not exist");
     }
+
+    console.log("Loan amount is " + loanAmount);
 
     const rawTransactions: string | undefined =
       payload?.extractedParameters?.transactions;
@@ -49,6 +51,8 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
       transactions,
       Number(loanAmount)
     );
+
+    await updateLoanInterestRate(loanId, process.env.LOAN_CONTRACT_ADDRESS as `0x${string}`, BigInt(interestRate));
 
     console.log("Interest rate is " + interestRate);
   } catch (e) {

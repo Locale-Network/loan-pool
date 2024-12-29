@@ -43,6 +43,8 @@ WORKDIR /opt/cartesi/dapp
 COPY --from=build-stage /opt/cartesi/dapp/dist .
 
 ENV ROLLUP_HTTP_SERVER_URL="http://127.0.0.1:5004"
+ENV NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8545 
+ENV LOAN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
 
 ENTRYPOINT ["rollup-init"]
 CMD ["node", "index.js"]

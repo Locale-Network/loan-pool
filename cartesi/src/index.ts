@@ -31,7 +31,15 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
       throw new Error("Loan ID is required");
     }
 
-    const loanAmount = await getLoanAmount(loanId, process.env.LOAN_CONTRACT_ADDRESS as `0x${string}`);
+    // const loanContract: `0x${string}` | undefined =
+    //   payload?.extractedParameters?.loan_contract;
+    const loanContract: `0x${string}` | undefined =
+      process.env.LOAN_CONTRACT_ADDRESS as `0x${string}`;
+    if (!loanContract) {
+      throw new Error("Loan contract address not provided")
+    }
+
+    const loanAmount = await getLoanAmount(loanId, loanContract);
     if (!loanAmount) {
       throw new Error("Loan does not exist");
     }
@@ -52,7 +60,7 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
       Number(loanAmount)
     );
 
-    await updateLoanInterestRate(loanId, process.env.LOAN_CONTRACT_ADDRESS as `0x${string}`, BigInt(interestRate));
+    await updateLoanInterestRate(loanId, loanContract, BigInt(interestRate));
 
     console.log("Interest rate is " + interestRate);
   } catch (e) {

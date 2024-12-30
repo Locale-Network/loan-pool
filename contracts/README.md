@@ -48,9 +48,13 @@ $ anvil
 ### Deploy
 
 ```shell
-$ forge script script/SimpleLoanPool.s.sol:SimpleLoanPoolScript --sig "deployWithToken(address,address[])" 0xd88b1c26Fc7205DFC12E3BB64a130d7CAdB55461 "[0xd88b1c26Fc7205DFC12E3BB64a130d7CAdB55461]"  --rpc-url http://127.0.0.1:8545
+forge script script/Create2.s.sol:Create2Script --sig "run()" --rpc-url http://127.0.0.1:8545
+
+forge script script/SimpleLoanPool.s.sol:SimpleLoanPoolScript --sig "deployWithToken(address,address[])" 0xd88b1c26Fc7205DFC12E3BB64a130d7CAdB55461 "[0xd88b1c26Fc7205DFC12E3BB64a130d7CAdB55461]"  --rpc-url http://127.0.0.1:8545
 
 forge script script/SimpleLoanPool.s.sol:SimpleLoanPoolScript --sig "deployWithToken(address,address[])" 0xd88b1c26Fc7205DFC12E3BB64a130d7CAdB55461 "[0xd88b1c26Fc7205DFC12E3BB64a130d7CAdB55461]" --rpc-url $ARBITRUM_MAINNET_RPC_URL --etherscan-api-key $ARBITRUM_MAINNET_ETHERSCAN_API_KEY --verify --verifier-url $ARBITRUM_ETHERSCAN_VERIFIER_URL --private-key $PRIVATE_KEY
+
+cast send 0xF60866D9B48dAd4459288531C792e959106b4fA6 "mint(address,uint256)" 0x974F91552D78700C9d65C0f88Dc88A160119A926 1000000000000 --rpc-url $ARBITRUM_MAINNET_RPC_URL --private-key $PRIVATE_KEY
 ```
 
 ### Cast

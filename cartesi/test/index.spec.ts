@@ -21,6 +21,6 @@ describe("Debt Service Calculation", () => {
 
     console.log(interestRate);
 
-    expect(interestRate).toBe(2.4507904052734375);
+    expect(interestRate).toBe(245.07904052734375);
   });
 });

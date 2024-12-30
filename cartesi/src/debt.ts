@@ -64,7 +64,7 @@ export function calculateRequiredInterestRate(
     }
   }
 
-  return high; // Return the lowest viable interest rate
+  return high * 100; // Return the lowest viable interest rate
 }
 
 // Example usage:

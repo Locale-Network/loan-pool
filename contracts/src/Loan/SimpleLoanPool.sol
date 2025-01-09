@@ -115,6 +115,11 @@ contract SimpleLoanPool is
 		_;
 	}
 
+    modifier onlyUnpaidLoan(bytes32 _loanId) {
+        require(loanIdToRepaymentAmount[_loanId] < loanIdToAmount[_loanId], "Loan is fully paid");
+        _;
+    }
+
 	modifier onlyInactiveLoan(bytes32 _loanId) {
 		require(!loanIdToActive[_loanId], "Loan already created");
 		_;
@@ -199,7 +204,7 @@ contract SimpleLoanPool is
     function updateLoanInterestRate(
         bytes32 _loanId,
         uint256 _interestRate
-    ) external onlySystemOrPoolManager loanExists(_loanId) onlyActiveLoan(_loanId) {
+    ) external onlySystemOrPoolManager loanExists(_loanId) onlyUnpaidLoan(_loanId) {
         loanIdToInterestRate[_loanId] = _interestRate;
 
 		uint256 amount = loanIdToAmount[_loanId];
@@ -217,7 +222,7 @@ contract SimpleLoanPool is
     function updateLoanRepaymentRemainingMonths(
         bytes32 _loanId,
         uint256 _repaymentRemainingMonths
-    ) external onlySystemOrPoolManager loanExists(_loanId) onlyActiveLoan(_loanId) {
+    ) external onlySystemOrPoolManager loanExists(_loanId) onlyUnpaidLoan(_loanId) {
         loanIdToRepaymentRemainingMonths[_loanId] = _repaymentRemainingMonths;
 
 		uint256 amount = loanIdToAmount[_loanId];

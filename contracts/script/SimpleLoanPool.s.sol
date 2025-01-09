@@ -60,8 +60,8 @@ contract SimpleLoanPoolScript is Script {
 
 		if (isAnvil()) {
 			UpgradeableCommunityToken token = UpgradeableCommunityToken(tokenProxy);
-
 			token.mint(proxy, 1000000000000);
+			token.mint(0x6883491Ba535c16D39160C0CD60569a18afdB1a5, 10000000);
 
 			console.log("Minted 1000000000000 tokens to the proxy");
 			console.log(token.balanceOf(proxy));

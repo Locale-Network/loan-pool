@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 import { components, paths } from "./schema";
 import { calculateRequiredInterestRate, Transaction } from "./debt";
-import { getLoanAmount, updateLoanInterestRate } from "./contracts/simpleLoanPool";
+import { stringToHex } from "viem";
 
 type AdvanceRequestData = components["schemas"]["Advance"];
 type InspectRequestData = components["schemas"]["Inspect"];
@@ -16,53 +16,43 @@ const rollupServer = process.env.ROLLUP_HTTP_SERVER_URL;
 console.log("HTTP rollup_server url is " + rollupServer);
 
 const handleAdvance: AdvanceRequestHandler = async (data) => {
-  console.log("Received advance request data " + JSON.stringify(data));
-
   try {
     // Decode hex-encoded payload to UTF-8 string
     const payloadStr =
       data.payload &&
       Buffer.from(data.payload.slice(2), "hex").toString("utf8");
-    console.log("payloadStr", payloadStr);
+
     const payload = payloadStr ? JSON.parse(payloadStr) : null;
     const loanId: string | undefined =
-      payload?.extractedParameters?.URL_PARAMS_1;
+      payload?.loanId;
     if (!loanId) {
       throw new Error("Loan ID is required");
     }
 
-    // const loanContract: `0x${string}` | undefined =
-    //   payload?.extractedParameters?.loan_contract;
-    const loanContract: `0x${string}` | undefined =
-      process.env.LOAN_CONTRACT_ADDRESS as `0x${string}`;
-    if (!loanContract) {
-      throw new Error("Loan contract address not provided")
-    }
-
-    const loanAmount = await getLoanAmount(loanId, loanContract);
+    const loanAmount: string | undefined = payload?.loanAmount;
     if (!loanAmount) {
-      throw new Error("Loan does not exist");
+      throw new Error("Loan amount missing");
     }
 
-    console.log("Loan amount is " + loanAmount);
+    const transactions: Transaction[] | undefined =
+      payload?.transactions;
 
-    const rawTransactions: string | undefined =
-      payload?.extractedParameters?.transactions;
-
-    if (!rawTransactions) {
+    if (!transactions) {
       throw new Error("Transactions are required");
     }
-
-    const transactions = JSON.parse(rawTransactions) as Transaction[];
 
     const interestRate = calculateRequiredInterestRate(
       transactions,
       Number(loanAmount)
     );
 
-    await updateLoanInterestRate(loanId, loanContract, BigInt(interestRate));
-
-    console.log("Interest rate is " + interestRate);
+    await fetch(`${rollupServer}/notice`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ payload: stringToHex(JSON.stringify({ loanId, interestRate })) }),
+    });
   } catch (e) {
     console.log("Error processing advance request", e);
   }

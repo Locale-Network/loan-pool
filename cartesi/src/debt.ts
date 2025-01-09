@@ -7,7 +7,9 @@ export function calculateRequiredInterestRate(
   transactions: Transaction[],
   loanAmount: number,
   termInMonths: number = 24,
-  dscr: number = 1.25
+  dscr: number = 1.25,
+  minInterestRate: number = 1,
+  maxInterestRate: number = 10
 ): number {
   // Group transactions by month and calculate NOI for each month
   const noiByMonth = transactions.reduce((acc, tx) => {
@@ -22,19 +24,19 @@ export function calculateRequiredInterestRate(
   // Calculate average monthly NOI instead of using most recent month
   const months = Object.keys(noiByMonth);
   if (months.length === 0) {
-    throw new Error("No transactions provided");
+    return minInterestRate * 100;
   }
   const monthlyNOI =
     Object.values(noiByMonth).reduce((sum, noi) => sum + noi, 0) /
     months.length;
 
   if (!monthlyNOI || monthlyNOI < 0) {
-    throw new Error("Monthly NOI is negative");
+    return minInterestRate * 100;
   }
 
   // Binary search to find the minimum interest rate that satisfies DSCR
-  let low = 0;
-  let high = 5;
+  let low = minInterestRate;
+  let high = maxInterestRate;
   const tolerance = 0.0001;
 
   while (high - low > tolerance) {
@@ -66,14 +68,3 @@ export function calculateRequiredInterestRate(
 
   return high * 100; // Return the lowest viable interest rate
 }
-
-// Example usage:
-/*
-const transactions = [
-    { amount: 120000, date: new Date('2024-01-01') },
-    { amount: -20000, date: new Date('2024-02-01') }
-];
-const loanAmount = 1000000;
-const rate = calculateRequiredInterestRate(transactions, loanAmount);
-console.log(`Required interest rate: ${rate.toFixed(2)}%`);
-*/

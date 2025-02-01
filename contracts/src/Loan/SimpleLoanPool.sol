@@ -53,6 +53,8 @@ contract SimpleLoanPool is
 
     mapping(address => uint256) public loanAmounts;
 
+    uint256 public totalLentAmount;
+
     ////////////////////////////////////////////////
     // CONSTRUCTOR
     ////////////////////////////////////////////////
@@ -167,6 +169,7 @@ contract SimpleLoanPool is
         loanIdToInterestAmount[_loanId] = (_amount * _interestRate * _repaymentRemainingMonths) / (12 * 10000);
         loanIdToInterestRate[_loanId] = _interestRate;
         loanIdToRepaymentAmount[_loanId] = 0;
+        loanIdToRepaymentRemainingMonths[_loanId] = _repaymentRemainingMonths;
 		
 		emit LoanCreated(_loanId, _borrower, _amount, _interestRate, _repaymentRemainingMonths);
     }
@@ -177,6 +180,8 @@ contract SimpleLoanPool is
 		loanIdToActive[_loanId] = true;
 
 		uint256 amount = loanIdToAmount[_loanId];
+
+        totalLentAmount += amount;
 		token.transfer(loanIdToBorrower[_loanId], amount);
 
 		emit LoanActivated(_loanId, loanIdToBorrower[_loanId], amount);
@@ -251,6 +256,7 @@ contract SimpleLoanPool is
         require(totalAmount > 0, "Amount must be greater than 0");
         
         // Transfer tokens from sender to pool
+        totalLentAmount -= repaymentAmount;
         require(token.transferFrom(msg.sender, address(this), totalAmount), "Transfer failed");
         
         // Update repayment amount

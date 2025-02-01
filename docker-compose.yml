@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  server:
+    image: nginx:latest
+    ports:
+      - 80:80
+      - 443:443
+    restart: always
+    volumes:
+      - ./.cartesi/nginx/conf/:/etc/nginx/conf.d/:ro
+      - certs_www_volume:/var/www/certbot/:ro
+      - certs_conf_volume:/etc/nginx/ssl/:ro
+    networks:
+      cartesi-net:
+        aliases:
+          - cartesi-server
+  server-cert:
+    image: nginx:latest
+    ports:
+      - 80:80
+      - 443:443
+    restart: always
+    volumes:
+      - ./.cartesi/nginx_cert/conf/:/etc/nginx/conf.d/:ro
+      - certs_www_volume:/var/www/certbot/:ro
+      - certs_conf_volume:/etc/nginx/ssl/:ro
+    networks:
+      cartesi-net:
+        aliases:
+          - cartesi-server-cert
+  certbot-renew:
+    image: certbot/certbot:latest
+    volumes:
+      - certs_www_volume:/var/www/certbot/:rw
+      - certs_conf_volume:/etc/letsencrypt/:rw
+
+volumes:
+  certs_www_volume:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ${PWD}/.cartesi/certbot/www/
+  certs_conf_volume:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ${PWD}/.cartesi/certbot/conf/
+
+networks:
+  cartesi-net:
+    name: cartesi-net

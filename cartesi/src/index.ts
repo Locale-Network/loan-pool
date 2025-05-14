@@ -3,9 +3,10 @@ import { components, paths } from "./schema";
 import { calculateRequiredInterestRate, Transaction } from "./debt";
 import { stringToHex } from "viem";
 import Decimal from "decimal.js";
+import { validatePayload, validateTransactions, ValidationError, PayloadError, TransactionError } from "./validation";
 
-const MAX_LOAN_AMOUNT = BigInt("1000000000000000000"); // 1 quintillion (1e18)
-const MIN_LOAN_AMOUNT = BigInt(1);
+export const MAX_LOAN_AMOUNT = BigInt("1000000000000000000"); // 1 quintillion (1e18)
+export const MIN_LOAN_AMOUNT = BigInt(1);
 
 type AdvanceRequestData = components["schemas"]["Advance"];
 type InspectRequestData = components["schemas"]["Inspect"];
@@ -20,59 +21,56 @@ const rollupServer = process.env.ROLLUP_HTTP_SERVER_URL;
 console.log("HTTP rollup_server url is " + rollupServer);
 
 const handleAdvance: AdvanceRequestHandler = async (data) => {
-  try {
-    // Decode hex-encoded payload to UTF-8 string
-    const payloadStr =
-      data.payload &&
-      Buffer.from(data.payload.slice(2), "hex").toString("utf8");
-
-    const payload = payloadStr ? JSON.parse(payloadStr) : null;
-    const loanId: string | undefined =
-      payload?.loanId;
-    if (!loanId) {
-      throw new Error("Loan ID is required");
+ try {
+    // Validate and decode payload
+    if (!data.payload) {
+      throw new PayloadError('Payload is required');
     }
 
-     const loanAmountStr: string | undefined = payload?.loanAmount;
-    if (!loanAmountStr) {
-      throw new Error("Loan amount missing");
+    const payloadStr = Buffer.from(data.payload.slice(2), "hex").toString("utf8");
+    const payload = validatePayload(payloadStr);
+
+    // Validate loan ID
+    if (!payload.loanId || typeof payload.loanId !== 'string') {
+      throw new ValidationError('Valid loan ID is required');
     }
 
+    // Validate loan amount
+    if (!payload.loanAmount) {
+      throw new ValidationError('Loan amount is required');
+    }
 
-        // Validate and convert loan amount using BigInt
     let loanAmountBigInt: bigint;
     try {
-      loanAmountBigInt = BigInt(loanAmountStr);
+      loanAmountBigInt = BigInt(payload.loanAmount);
     } catch (e) {
-      throw new Error("Invalid loan amount format");
+      throw new ValidationError('Invalid loan amount format');
     }
 
-
-        // Validate loan amount range
     if (loanAmountBigInt <= MIN_LOAN_AMOUNT) {
-      throw new Error("Loan amount must be greater than 0");
+      throw new ValidationError('Loan amount must be greater than 0');
     }
     if (loanAmountBigInt >= MAX_LOAN_AMOUNT) {
-      throw new Error("Loan amount exceeds maximum allowed");
+      throw new ValidationError(`Loan amount exceeds maximum allowed (${MAX_LOAN_AMOUNT})`);
     }
-     // Convert BigInt to Decimal for precise calculations
+
+    // Validate and process transactions
+    if (!payload.transactions) {
+      throw new ValidationError('Transactions are required');
+    }
+
+    const validatedTransactions = validateTransactions(payload.transactions);
     const loanAmountDecimal = new Decimal(loanAmountBigInt.toString());
 
-
-    const transactions: Transaction[] | undefined =
-      payload?.transactions;
-
-    if (!transactions) {
-      throw new Error("Transactions are required");
-    }
-
+    // Calculate interest rate
     const interestRate = calculateRequiredInterestRate(
-      transactions,
+      validatedTransactions,
       loanAmountDecimal.toNumber()
     );
 
-     const response = {
-      loanId,
+    // Prepare and send response
+    const response = {
+      loanId: payload.loanId,
       interestRate: new Decimal(interestRate).toFixed(6),
       loanAmount: loanAmountBigInt.toString()
     };
@@ -82,16 +80,29 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
       headers: {
         "Content-Type": "application/json",
       },
-       body: JSON.stringify({ 
+      body: JSON.stringify({
         payload: stringToHex(JSON.stringify(response))
       }),
+    }).catch(e => {
+      throw new Error(`Failed to send notice: ${e.message}`);
     });
-  } catch (e) {
-    console.log("Error processing advance request", e);
-    throw e; // Re-throw to ensure errors are properly handled
-  }
 
-  return "accept";
+    return "accept";
+  } catch (e) {
+    // Structured error logging
+    if (e instanceof ValidationError) {
+      console.error(`Validation Error: ${e.message}`);
+    } else if (e instanceof PayloadError) {
+      console.error(`Payload Error: ${e.message}`);
+    } else if (e instanceof TransactionError) {
+      console.error(`Transaction Error: ${e.message}`);
+    } else {
+      console.error(`Unexpected Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    // Re-throw to ensure proper error handling up the chain
+    throw e;
+  }
 };
 
 const handleInspect: InspectRequestHandler = async (data) => {

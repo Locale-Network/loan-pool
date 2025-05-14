@@ -1,4 +1,4 @@
-import { Transaction } from "./debt";
+import { Transaction } from './debt';
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -21,7 +21,6 @@ export class TransactionError extends Error {
   }
 }
 
-
 // Validation functions
 export function validateTransaction(tx: any): Transaction {
   if (!tx || typeof tx !== 'object') {
@@ -38,7 +37,7 @@ export function validateTransaction(tx: any): Transaction {
 
   return {
     amount: tx.amount,
-    date: tx.date instanceof Date ? tx.date : new Date(tx.date)
+    date: tx.date instanceof Date ? tx.date : new Date(tx.date),
   };
 }
 
@@ -55,7 +54,9 @@ export function validateTransactions(transactions: any[]): Transaction[] {
     try {
       return validateTransaction(tx);
     } catch (e) {
-      throw new ValidationError(`Invalid transaction at index ${index}: ${e instanceof Error ? e.message : String(e)}`);
+      throw new ValidationError(
+        `Invalid transaction at index ${index}: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
   });
 }

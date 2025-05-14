@@ -2,6 +2,10 @@ import createClient from "openapi-fetch";
 import { components, paths } from "./schema";
 import { calculateRequiredInterestRate, Transaction } from "./debt";
 import { stringToHex } from "viem";
+import Decimal from "decimal.js";
+
+const MAX_LOAN_AMOUNT = BigInt("1000000000000000000"); // 1 quintillion (1e18)
+const MIN_LOAN_AMOUNT = BigInt(1);
 
 type AdvanceRequestData = components["schemas"]["Advance"];
 type InspectRequestData = components["schemas"]["Inspect"];
@@ -29,10 +33,31 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
       throw new Error("Loan ID is required");
     }
 
-    const loanAmount: string | undefined = payload?.loanAmount;
-    if (!loanAmount) {
+     const loanAmountStr: string | undefined = payload?.loanAmount;
+    if (!loanAmountStr) {
       throw new Error("Loan amount missing");
     }
+
+
+        // Validate and convert loan amount using BigInt
+    let loanAmountBigInt: bigint;
+    try {
+      loanAmountBigInt = BigInt(loanAmountStr);
+    } catch (e) {
+      throw new Error("Invalid loan amount format");
+    }
+
+
+        // Validate loan amount range
+    if (loanAmountBigInt <= MIN_LOAN_AMOUNT) {
+      throw new Error("Loan amount must be greater than 0");
+    }
+    if (loanAmountBigInt >= MAX_LOAN_AMOUNT) {
+      throw new Error("Loan amount exceeds maximum allowed");
+    }
+     // Convert BigInt to Decimal for precise calculations
+    const loanAmountDecimal = new Decimal(loanAmountBigInt.toString());
+
 
     const transactions: Transaction[] | undefined =
       payload?.transactions;
@@ -43,18 +68,27 @@ const handleAdvance: AdvanceRequestHandler = async (data) => {
 
     const interestRate = calculateRequiredInterestRate(
       transactions,
-      Number(loanAmount)
+      loanAmountDecimal.toNumber()
     );
+
+     const response = {
+      loanId,
+      interestRate: new Decimal(interestRate).toFixed(6),
+      loanAmount: loanAmountBigInt.toString()
+    };
 
     await fetch(`${rollupServer}/notice`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ payload: stringToHex(JSON.stringify({ loanId, interestRate })) }),
+       body: JSON.stringify({ 
+        payload: stringToHex(JSON.stringify(response))
+      }),
     });
   } catch (e) {
     console.log("Error processing advance request", e);
+    throw e; // Re-throw to ensure errors are properly handled
   }
 
   return "accept";

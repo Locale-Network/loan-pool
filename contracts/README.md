@@ -54,6 +54,8 @@ forge script script/SimpleLoanPool.s.sol:SimpleLoanPoolScript --sig "deployWithT
 
 forge script script/SimpleLoanPool.s.sol:SimpleLoanPoolScript --sig "deployWithToken(address,address[])" 0x4A9A56af5CadA04dbBbaB8298BC4E149435DcB89 "[0x4A9A56af5CadA04dbBbaB8298BC4E149435DcB89]" --rpc-url $ARBITRUM_MAINNET_RPC_URL --etherscan-api-key $ARBITRUM_MAINNET_ETHERSCAN_API_KEY --verify --verifier-url $ARBITRUM_ETHERSCAN_VERIFIER_URL --private-key $PRIVATE_KEY
 
+forge script script/SimpleLoanPool.s.sol:SimpleLoanPoolScript --sig "deployWithToken(address,address[])" 0x6Bc5974956cc6eE184435B1498d56043cB9B78bA "[0x6Bc5974956cc6eE184435B1498d56043cB9B78bA]" --rpc-url $ARBITRUM_TESTNET_RPC_URL --etherscan-api-key $ARBITRUM_TESTNET_ETHERSCAN_API_KEY --verify --verifier-url $ARBITRUM_TESTNET_ETHERSCAN_VERIFIER_URL --private-key $PRIVATE_KEY
+
 cast send 0xF60866D9B48dAd4459288531C792e959106b4fA6 "mint(address,uint256)" 0x974F91552D78700C9d65C0f88Dc88A160119A926 1000000000000 --rpc-url $ARBITRUM_MAINNET_RPC_URL --private-key $PRIVATE_KEY
 ```
 

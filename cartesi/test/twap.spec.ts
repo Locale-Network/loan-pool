@@ -26,7 +26,10 @@ describe('calculateTWAP', () => {
       '2024-02': undefined as unknown as number, // simulate corruption
       '2024-03': 3000
     };
-    const expected = (1000 * 0.9 + 3000 * 1.0) / (0.9 + 1.0);
+    // When Feb is undefined, it's skipped but weights are still based on calendar position:
+    // Jan = 0.81 (0.9^2 = 2 months ago), Mar = 1.0 (0.9^0 = current)
+    // This preserves the time-weighted nature - Jan is truly 2 calendar months before March
+    const expected = (1000 * 0.81 + 3000 * 1.0) / (0.81 + 1.0);
     const result = calculateTWAP(noi);
     expect(result).toBeCloseTo(expected, 5);
   });

@@ -5,3 +5,7 @@ src/schema.d.ts
 
 .env
 *.env
+
+# markdown files (except README)
+*.md
+!README.md

@@ -22,7 +22,8 @@ const groupTransactionsByMonth = (transactions: Transaction[]): TransactionsByMo
   return transactions.reduce(
     (acc, tx) => {
       const date = new Date(tx.date);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      // Use UTC methods to avoid timezone issues with date parsing
+      const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 
       if (!acc[monthKey]) {
         acc[monthKey] = [];
@@ -66,7 +67,41 @@ export const removeOutliersMAD = (transactions: Transaction[]): TransactionsByMo
         return acc;
       }
 
-      // Use median absolute deviation
+      // For small sample sizes (2-3 values), use ratio-based outlier detection
+      // since MAD is unreliable with so few data points
+      if (amounts.length <= 3) {
+        const sorted = [...amounts].sort((a, b) => a - b);
+        const min = sorted[0]!;
+        const max = sorted[sorted.length - 1]!;
+
+        // If max is more than 10x the min (and min is positive), remove extreme outliers
+        if (min > 0 && max / min > 10) {
+          // Remove values that are extreme outliers (>10x different from the majority)
+          // For 2 values: keep the smaller one (more likely to be normal)
+          // For 3 values: keep values closer to the middle value
+          if (amounts.length === 2) {
+            acc[month] = [min];
+          } else {
+            // For 3 values, keep those within 10x of the middle value
+            const middle = sorted[1]!;
+            acc[month] = amounts.filter(amount => {
+              const ratio = amount > middle ? amount / middle : middle / amount;
+              return ratio <= 10;
+            });
+          }
+        } else if (min < 0 && max > 0 && Math.abs(min) / max > 10) {
+          // For mixed positive/negative with extreme negative, remove the negative outlier
+          acc[month] = amounts.filter(amount => amount >= 0 || Math.abs(amount) / max <= 10);
+        } else if (min < 0 && max > 0 && max / Math.abs(min) > 10) {
+          // For mixed positive/negative with extreme positive, remove the positive outlier
+          acc[month] = amounts.filter(amount => amount <= 0 || amount / Math.abs(min) <= 10);
+        } else {
+          acc[month] = amounts;
+        }
+        return acc;
+      }
+
+      // Use median absolute deviation for larger sample sizes
       const median = calculateMedian(amounts);
       const deviations = amounts.map(x => Math.abs(x - median));
       const mad = calculateMedian(deviations);
@@ -175,7 +210,8 @@ export function calculateRequiredInterestRate(
   const noiByMonth = transactions.reduce(
     (acc, tx) => {
       const date = new Date(tx.date);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      // Use UTC methods to avoid timezone issues with date parsing
+      const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
       acc[monthKey] = (acc[monthKey] || new Decimal(0)).plus(new Decimal(tx.amount));
       return acc;
     },

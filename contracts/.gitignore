@@ -12,3 +12,7 @@ docs/
 
 # Dotenv file
 .env
+
+# markdown files (except README)
+*.md
+!README.md

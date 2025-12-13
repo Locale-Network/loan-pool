@@ -40,7 +40,12 @@ EOF
 ENV PATH="/opt/cartesi/bin:${PATH}"
 
 WORKDIR /opt/cartesi/dapp
+
+# Copy built application
 COPY --from=build-stage /opt/cartesi/dapp/dist .
+
+# Copy sql.js WASM file for SQLite support
+COPY --from=build-stage /opt/cartesi/dapp/node_modules/sql.js/dist/sql-wasm.wasm .
 
 ENV ROLLUP_HTTP_SERVER_URL="http://127.0.0.1:5004"
 

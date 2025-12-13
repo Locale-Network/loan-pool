@@ -1,0 +1,23 @@
+# Environment & Secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+
+# Memory bank (local dev docs)
+memory-bank/
+
+# Markdown files (except README)
+*.md
+!README.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

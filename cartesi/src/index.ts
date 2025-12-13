@@ -1,121 +1,118 @@
 import createClient from 'openapi-fetch';
 import { components, paths } from './schema';
-import { calculateRequiredInterestRate, Transaction } from './debt';
-import { stringToHex } from 'viem';
-import Decimal from 'decimal.js';
+import { initDatabase } from './db';
+import { createRouter, RouteConfig } from './router';
 import {
-  validatePayload,
-  validateTransactions,
-  ValidationError,
-  PayloadError,
-  TransactionError,
-} from './validation';
-
-export const MAX_LOAN_AMOUNT = BigInt('1000000000000000000'); // 1 quintillion (1e18)
-export const MIN_LOAN_AMOUNT = BigInt(1);
+  handleRegisterBorrower,
+  handleUpdateKyc,
+  handleInspectBorrower,
+  handleCreateLoan,
+  handleUpdateLoanStatus,
+  handleInspectLoan,
+  handleApproveLoan,
+  handleDisburseLoan,
+  handleSyncTransactions,
+  handleInspectTransactions,
+  handleCalculateDscr,
+  handleInspectDscr,
+  handleApproveRateChange,
+  handleRejectRateChange,
+  handleInspectPendingRateChanges,
+  handleSubmitDataProof,
+  handleInspectProof,
+  handleInspectVerifiedDscr,
+  handleInspectStats,
+  // zkFetch handlers (zkFetch + Cartesi DSCR verification)
+  handleVerifyDscrZkFetch,
+  handleInspectZkFetch,
+  initZkFetchTable,
+} from './handlers';
 
 type AdvanceRequestData = components['schemas']['Advance'];
 type InspectRequestData = components['schemas']['Inspect'];
 type RequestHandlerResult = components['schemas']['Finish']['status'];
 type RollupsRequest = components['schemas']['RollupRequest'];
-type InspectRequestHandler = (data: InspectRequestData) => Promise<void>;
-type AdvanceRequestHandler = (data: AdvanceRequestData) => Promise<RequestHandlerResult>;
 
 const rollupServer = process.env.ROLLUP_HTTP_SERVER_URL;
 console.log('HTTP rollup_server url is ' + rollupServer);
 
-const handleAdvance: AdvanceRequestHandler = async data => {
-  try {
-    // Validate and decode payload
-    if (!data.payload) {
-      throw new PayloadError('Payload is required');
-    }
+/**
+ * Route configuration for all handlers.
+ */
+const routeConfig: RouteConfig = {
+  advance: {
+    // Borrower actions
+    register_borrower: handleRegisterBorrower,
+    update_kyc: handleUpdateKyc,
 
-    const payloadStr = Buffer.from(data.payload.slice(2), 'hex').toString('utf8');
-    const payload = validatePayload(payloadStr);
+    // Loan actions
+    create_loan: handleCreateLoan,
+    update_loan_status: handleUpdateLoanStatus,
+    approve_loan: handleApproveLoan,
+    disburse_loan: handleDisburseLoan,
 
-    // Validate loan ID
-    if (!payload.loanId || typeof payload.loanId !== 'string') {
-      throw new ValidationError('Valid loan ID is required');
-    }
+    // Transaction actions
+    sync_transactions: handleSyncTransactions,
 
-    // Validate loan amount
-    if (!payload.loanAmount) {
-      throw new ValidationError('Loan amount is required');
-    }
+    // DSCR actions
+    calculate_dscr: handleCalculateDscr,
 
-    let loanAmountBigInt: bigint;
-    try {
-      loanAmountBigInt = BigInt(payload.loanAmount);
-    } catch (e) {
-      throw new ValidationError('Invalid loan amount format');
-    }
+    // Rate change approval actions
+    approve_rate_change: handleApproveRateChange,
+    reject_rate_change: handleRejectRateChange,
 
-    if (loanAmountBigInt <= MIN_LOAN_AMOUNT) {
-      throw new ValidationError('Loan amount must be greater than 0');
-    }
-    if (loanAmountBigInt >= MAX_LOAN_AMOUNT) {
-      throw new ValidationError(`Loan amount exceeds maximum allowed (${MAX_LOAN_AMOUNT})`);
-    }
+    // Proof actions
+    submit_data_proof: handleSubmitDataProof,
 
-    // Validate and process transactions
-    if (!payload.transactions) {
-      throw new ValidationError('Transactions are required');
-    }
+    // zkFetch actions (zkFetch + Cartesi DSCR verification)
+    verify_dscr_zkfetch: handleVerifyDscrZkFetch,
+  },
+  inspect: {
+    // Borrower queries
+    borrower: handleInspectBorrower,
 
-    const validatedTransactions = validateTransactions(payload.transactions);
-    const loanAmountDecimal = new Decimal(loanAmountBigInt.toString());
+    // Loan queries
+    loan: handleInspectLoan,
 
-    // Calculate interest rate
-    const interestRate = calculateRequiredInterestRate(
-      validatedTransactions,
-      loanAmountDecimal.toNumber()
-    );
+    // Transaction queries
+    transactions: handleInspectTransactions,
 
-    // Prepare and send response
-    const response = {
-      loanId: payload.loanId,
-      interestRate: new Decimal(interestRate).toFixed(6),
-      loanAmount: loanAmountBigInt.toString(),
-    };
+    // DSCR queries
+    dscr: handleInspectDscr,
 
-    await fetch(`${rollupServer}/notice`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        payload: stringToHex(JSON.stringify(response)),
-      }),
-    }).catch(e => {
-      throw new Error(`Failed to send notice: ${e.message}`);
-    });
+    // Pending rate changes queries
+    pending_rate_changes: handleInspectPendingRateChanges,
 
-    return 'accept';
-  } catch (e) {
-    // Structured error logging
-    if (e instanceof ValidationError) {
-      console.error(`Validation Error: ${e.message}`);
-    } else if (e instanceof PayloadError) {
-      console.error(`Payload Error: ${e.message}`);
-    } else if (e instanceof TransactionError) {
-      console.error(`Transaction Error: ${e.message}`);
-    } else {
-      console.error(`Unexpected Error: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    // Proof queries
+    proof: handleInspectProof,
+    verified_dscr: handleInspectVerifiedDscr,
 
-    // Re-throw to ensure proper error handling up the chain
-    throw e;
-  }
-};
+    // zkFetch queries
+    zkfetch: handleInspectZkFetch,
 
-const handleInspect: InspectRequestHandler = async data => {
-  console.log('Received inspect request data ' + JSON.stringify(data));
+    // Stats queries
+    stats: handleInspectStats,
+  },
 };
 
 const main = async () => {
+  // Initialize database
+  console.log('Initializing database...');
+  await initDatabase();
+  console.log('Database initialized');
+
+  // Initialize zkFetch table
+  initZkFetchTable();
+  console.log('zkFetch table initialized');
+
+  // Create router with all handlers
+  const router = createRouter(routeConfig);
+
   const { POST } = createClient<paths>({ baseUrl: rollupServer });
   let status: RequestHandlerResult = 'accept';
+
+  console.log('Starting main loop...');
+
   while (true) {
     const { response } = await POST('/finish', {
       body: { status },
@@ -126,10 +123,11 @@ const main = async () => {
       const data = (await response.json()) as RollupsRequest;
       switch (data.request_type) {
         case 'advance_state':
-          status = await handleAdvance(data.data as AdvanceRequestData);
+          status = await router.handleAdvance(data.data as AdvanceRequestData);
           break;
         case 'inspect_state':
-          await handleInspect(data.data as InspectRequestData);
+          await router.handleInspect(data.data as InspectRequestData);
+          status = 'accept';
           break;
       }
     } else if (response.status === 202) {
@@ -139,6 +137,6 @@ const main = async () => {
 };
 
 main().catch(e => {
-  console.log(e);
+  console.error('Fatal error:', e);
   process.exit(1);
 });

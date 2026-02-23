@@ -298,4 +298,301 @@ contract SimpleLoanPoolTest is Test {
         uint256 expectedInterestForPayment = (totalOwed * 1000) / (12 * 10000 * 12);
         assertEq(interestForPayment, expectedInterestForPayment, "Interest for payment mismatch");
     }
+
+    ///////////////////////////////////////////////////////////
+    // Test 8: Partial Repayment
+    ///////////////////////////////////////////////////////////
+
+    function testMakePartialRepayment() public {
+        // Create and activate loan
+        pool.createLoan(loanId1, borrower, 1000 * 1e6, 1000, 12); // 10% APR
+        pool.activateLoan(loanId1);
+
+        // Make a partial payment (interest first, then principal)
+        uint256 partialPayment = 200 * 1e6;
+
+        vm.prank(borrower);
+        usdc.approve(address(pool), partialPayment);
+
+        uint256 poolBalanceBefore = usdc.balanceOf(address(pool));
+
+        vm.prank(borrower);
+        pool.makePartialRepayment(loanId1, partialPayment);
+
+        uint256 poolBalanceAfter = usdc.balanceOf(address(pool));
+
+        // Pool should receive the partial payment
+        assertEq(poolBalanceAfter - poolBalanceBefore, partialPayment);
+
+        // Loan should still be active
+        assertTrue(pool.loanIdToActive(loanId1));
+    }
+
+    function testPartialRepayment_InterestFirstThenPrincipal() public {
+        pool.createLoan(loanId1, borrower, 1000 * 1e6, 1000, 12); // 10% APR = 100 USDC interest
+        pool.activateLoan(loanId1);
+
+        // Total interest is 100 USDC (10% of 1000)
+        uint256 totalInterest = pool.loanIdToInterestAmount(loanId1);
+        assertEq(totalInterest, 100 * 1e6);
+
+        // Pay exactly the interest amount
+        uint256 interestPayment = totalInterest;
+
+        vm.prank(borrower);
+        usdc.approve(address(pool), interestPayment);
+
+        vm.prank(borrower);
+        pool.makePartialRepayment(loanId1, interestPayment);
+
+        // Interest should be fully paid, principal untouched
+        assertEq(pool.loanIdToInterestRepaymentAmount(loanId1), totalInterest);
+        assertEq(pool.loanIdToRepaymentAmount(loanId1), 0); // Principal unchanged
+
+        // Now pay principal
+        uint256 principalPayment = 500 * 1e6;
+
+        vm.prank(borrower);
+        usdc.approve(address(pool), principalPayment);
+
+        vm.prank(borrower);
+        pool.makePartialRepayment(loanId1, principalPayment);
+
+        // Principal should be reduced
+        assertEq(pool.loanIdToRepaymentAmount(loanId1), principalPayment);
+    }
+
+    ///////////////////////////////////////////////////////////
+    // Test 9: Loan Default
+    ///////////////////////////////////////////////////////////
+
+    function testMarkLoanDefaulted() public {
+        pool.createLoan(loanId1, borrower, 1000 * 1e6, 1000, 12);
+        pool.activateLoan(loanId1);
+
+        uint256 totalLentBefore = pool.totalLentAmount();
+
+        // Pool manager can mark loan as defaulted
+        pool.markLoanDefaulted(loanId1);
+
+        // Loan should be defaulted and inactive
+        assertTrue(pool.isLoanDefaulted(loanId1));
+        assertFalse(pool.loanIdToActive(loanId1));
+
+        // totalLentAmount should decrease by outstanding principal
+        uint256 totalLentAfter = pool.totalLentAmount();
+        assertEq(totalLentBefore - totalLentAfter, 1000 * 1e6);
+    }
+
+    function testMarkLoanDefaulted_RevertIfNotActive() public {
+        pool.createLoan(loanId1, borrower, 1000 * 1e6, 1000, 12);
+        // Loan not activated
+
+        vm.expectRevert("Loan is not active");
+        pool.markLoanDefaulted(loanId1);
+    }
+
+    function testMarkLoanDefaulted_RevertIfAlreadyDefaulted() public {
+        pool.createLoan(loanId1, borrower, 1000 * 1e6, 1000, 12);
+        pool.activateLoan(loanId1);
+        pool.markLoanDefaulted(loanId1);
+
+        // When a loan is defaulted, it's also marked as inactive
+        // So the onlyActiveLoan modifier triggers first
+        vm.expectRevert("Loan is not active");
+        pool.markLoanDefaulted(loanId1);
+    }
+
+    function testGetLoanOutstanding() public {
+        pool.createLoan(loanId1, borrower, 1000 * 1e6, 1000, 12);
+        pool.activateLoan(loanId1);
+
+        (uint256 outstandingPrincipal, uint256 outstandingInterest) = pool.getLoanOutstanding(loanId1);
+
+        assertEq(outstandingPrincipal, 1000 * 1e6);
+        assertEq(outstandingInterest, 100 * 1e6); // 10% of 1000
+    }
+
+    ///////////////////////////////////////////////////////////
+    // Test 10: zkFetch + Cartesi DSCR Verification
+    ///////////////////////////////////////////////////////////
+
+    function testSetRelayService() public {
+        address relayService = address(0x123);
+
+        pool.setRelayService(relayService);
+        assertEq(pool.relayService(), relayService);
+    }
+
+    function testSetRelayService_OnlyOwner() public {
+        vm.prank(borrower);
+        vm.expectRevert();
+        pool.setRelayService(address(0x123));
+    }
+
+    function testHandleNotice_DscrVerifiedZkFetch() public {
+        address relayService = address(0x123);
+        pool.setRelayService(relayService);
+
+        // Simulate relay service calling handleNotice
+        bytes32 loanId = keccak256("zkfetch_loan");
+        uint256 dscrValue = 1500; // 1.5 DSCR (scaled by 1000)
+        uint256 interestRate = 500; // 5% APR
+        bytes32 proofHash = keccak256("proof_data");
+
+        bytes memory noticeData = abi.encode(loanId, dscrValue, interestRate, proofHash);
+
+        vm.prank(relayService);
+        pool.handleNotice("dscr_verified_zkfetch", borrower, noticeData);
+
+        // Verify the DSCR result was stored
+        assertTrue(pool.hasZkFetchVerifiedDscr(loanId));
+
+        (uint256 storedDscr, uint256 storedRate, bytes32 storedHash, uint256 verifiedAt) =
+            pool.getZkFetchDscrResult(loanId);
+
+        assertEq(storedDscr, dscrValue);
+        assertEq(storedRate, interestRate);
+        assertEq(storedHash, proofHash);
+        assertGt(verifiedAt, 0);
+
+        // Verify borrower's latest loan ID is tracked
+        assertEq(pool.getBorrowerLatestVerifiedLoan(borrower), loanId);
+    }
+
+    function testHandleNotice_RevertIfNotRelayService() public {
+        address relayService = address(0x123);
+        pool.setRelayService(relayService);
+
+        bytes memory noticeData = abi.encode(loanId1, 1500, 500, keccak256("proof"));
+
+        vm.prank(borrower); // Not the relay service
+        vm.expectRevert("Only relay service can call this");
+        pool.handleNotice("dscr_verified_zkfetch", borrower, noticeData);
+    }
+
+    function testHandleNotice_RevertUnknownNoticeType() public {
+        address relayService = address(0x123);
+        pool.setRelayService(relayService);
+
+        bytes memory noticeData = abi.encode(loanId1, 1500, 500, keccak256("proof"));
+
+        vm.prank(relayService);
+        vm.expectRevert("Unknown notice type");
+        pool.handleNotice("unknown_type", borrower, noticeData);
+    }
+
+    function testCreateLoanWithZkFetchDscr() public {
+        address relayService = address(0x123);
+        pool.setRelayService(relayService);
+
+        bytes32 zkLoanId = keccak256("zk_loan");
+        uint256 dscrValue = 1500; // 1.5 DSCR
+        uint256 interestRate = 500; // 5% APR
+        bytes32 proofHash = keccak256("proof_data");
+
+        // First, submit the DSCR verification via relay
+        bytes memory noticeData = abi.encode(zkLoanId, dscrValue, interestRate, proofHash);
+        vm.prank(relayService);
+        pool.handleNotice("dscr_verified_zkfetch", borrower, noticeData);
+
+        // Now create the loan using verified DSCR
+        uint256 loanAmount = 10000 * 1e6;
+        uint256 months = 24;
+
+        pool.createLoanWithZkFetchDscr(zkLoanId, borrower, loanAmount, months);
+
+        // Verify loan was created with the verified interest rate
+        assertEq(pool.loanIdToBorrower(zkLoanId), borrower);
+        assertEq(pool.loanIdToAmount(zkLoanId), loanAmount);
+        assertEq(pool.loanIdToInterestRate(zkLoanId), interestRate);
+
+        // Interest amount should use verified rate: (amount * rate * months) / (12 * 10000)
+        uint256 expectedInterest = (loanAmount * interestRate * months) / (12 * 10000);
+        assertEq(pool.loanIdToInterestAmount(zkLoanId), expectedInterest);
+    }
+
+    function testCreateLoanWithZkFetchDscr_RevertIfNoVerification() public {
+        bytes32 unverifiedLoanId = keccak256("unverified_loan");
+
+        vm.expectRevert("No valid zkFetch DSCR for this loan");
+        pool.createLoanWithZkFetchDscr(unverifiedLoanId, borrower, 10000 * 1e6, 24);
+    }
+
+    function testHasZkFetchVerifiedDscr() public {
+        // Should be false for non-existent loan
+        assertFalse(pool.hasZkFetchVerifiedDscr(loanId1));
+
+        // Submit verification
+        address relayService = address(0x123);
+        pool.setRelayService(relayService);
+
+        bytes memory noticeData = abi.encode(loanId1, 1500, 500, keccak256("proof"));
+        vm.prank(relayService);
+        pool.handleNotice("dscr_verified_zkfetch", borrower, noticeData);
+
+        // Should be true now
+        assertTrue(pool.hasZkFetchVerifiedDscr(loanId1));
+    }
+
+    function testGetZkFetchDscrResult_RevertIfNotVerified() public {
+        vm.expectRevert("No verified DSCR for this loan");
+        pool.getZkFetchDscrResult(loanId1);
+    }
+
+    ///////////////////////////////////////////////////////////
+    // Test 11: Event Emissions
+    ///////////////////////////////////////////////////////////
+
+    function testEvent_DscrVerifiedZkFetch() public {
+        address relayService = address(0x123);
+        pool.setRelayService(relayService);
+
+        bytes32 loanId = keccak256("event_test_loan");
+        uint256 dscrValue = 1500;
+        uint256 interestRate = 500;
+        bytes32 proofHash = keccak256("proof");
+
+        bytes memory noticeData = abi.encode(loanId, dscrValue, interestRate, proofHash);
+
+        vm.prank(relayService);
+        vm.expectEmit(true, true, false, true);
+        emit SimpleLoanPool.DscrVerifiedZkFetch(
+            loanId,
+            borrower,
+            dscrValue,
+            interestRate,
+            proofHash,
+            block.timestamp
+        );
+        pool.handleNotice("dscr_verified_zkfetch", borrower, noticeData);
+    }
+
+    function testEvent_LoanCreatedWithVerifiedDscr() public {
+        address relayService = address(0x123);
+        pool.setRelayService(relayService);
+
+        bytes32 loanId = keccak256("verified_loan");
+        uint256 dscrValue = 1500;
+        uint256 interestRate = 500;
+
+        bytes memory noticeData = abi.encode(loanId, dscrValue, interestRate, keccak256("proof"));
+        vm.prank(relayService);
+        pool.handleNotice("dscr_verified_zkfetch", borrower, noticeData);
+
+        uint256 amount = 10000 * 1e6;
+
+        vm.expectEmit(true, true, false, true);
+        emit SimpleLoanPool.LoanCreatedWithVerifiedDscr(loanId, borrower, amount, dscrValue, interestRate);
+        pool.createLoanWithZkFetchDscr(loanId, borrower, amount, 24);
+    }
+
+    function testEvent_LoanDefaulted() public {
+        pool.createLoan(loanId1, borrower, 1000 * 1e6, 1000, 12);
+        pool.activateLoan(loanId1);
+
+        vm.expectEmit(true, true, false, true);
+        emit SimpleLoanPool.LoanDefaulted(loanId1, borrower, 1000 * 1e6, 100 * 1e6);
+        pool.markLoanDefaulted(loanId1);
+    }
 }

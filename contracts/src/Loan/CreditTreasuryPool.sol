@@ -12,10 +12,12 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {IProofVerifier} from "../Verification/IProofVerifier.sol";
 
-/// @title SimpleLoanPool
-/// @notice A contract for managing simple loans with interest
+/// @title CreditTreasuryPool (formerly SimpleLoanPool)
+/// @notice A treasury contract for managing all loans with interest
+/// @dev Single contract manages ALL loans - more gas efficient than per-loan contracts
 /// @dev Implements upgradeable pattern with access control and optional proof verification
-contract SimpleLoanPool is
+/// @custom:security-contact security@locale-lending.com
+contract CreditTreasuryPool is
     Initializable,
     OwnableUpgradeable,
     AccessControlUpgradeable,
@@ -60,26 +62,27 @@ contract SimpleLoanPool is
 
     ////////////////////////////////////////////////
     // STATE
+    // IMPORTANT: Storage layout must match the originally deployed implementation.
+    // DO NOT reorder, insert, or remove variables above the "V2 additions" marker.
+    // New state variables MUST be appended at the end only.
     ////////////////////////////////////////////////
-    ERC20Upgradeable public token;
-    IProofVerifier public proofVerifier;
+    ERC20Upgradeable public token;                                     // slot 0
+    IProofVerifier public proofVerifier;                                // slot 1
 
-    mapping(bytes32 => bool) public loanIdToActive;
-    mapping(bytes32 => bool) public loanIdToDefaulted;
-    mapping(bytes32 => address) public loanIdToBorrower;
-    mapping(bytes32 => uint256) public loanIdToAmount;
-	mapping(bytes32 => uint256) public loanIdToInterestAmount;
-    mapping(bytes32 => uint256) public loanIdToInterestRate;
-    mapping(bytes32 => uint256) public loanIdToRepaymentAmount;
-	mapping(bytes32 => uint256) public loanIdToInterestRepaymentAmount;
-    mapping(bytes32 => uint256) public loanIdToRepaymentRemainingMonths;
+    mapping(bytes32 => bool) public loanIdToActive;                    // slot 2
+    mapping(bytes32 => address) public loanIdToBorrower;               // slot 3
+    mapping(bytes32 => uint256) public loanIdToAmount;                 // slot 4
+    mapping(bytes32 => uint256) public loanIdToInterestAmount;         // slot 5
+    mapping(bytes32 => uint256) public loanIdToInterestRate;           // slot 6
+    mapping(bytes32 => uint256) public loanIdToInterestRepaymentAmount; // slot 7
+    mapping(bytes32 => uint256) public loanIdToRepaymentRemainingMonths; // slot 8
 
-    mapping(address => uint256) public loanAmounts;
+    mapping(address => uint256) public loanAmounts;                    // slot 9
 
-    uint256 public totalLentAmount;
+    uint256 public totalLentAmount;                                    // slot 10
 
     // Relay service for Cartesi notice handling
-    address public relayService;
+    address public relayService;                                       // slot 11
 
     // zkFetch + Cartesi DSCR verification state
     struct ZkFetchDscrResult {
@@ -89,8 +92,12 @@ contract SimpleLoanPool is
         uint256 verifiedAt;          // Timestamp of verification
         bool isValid;                // Whether the result is still valid
     }
-    mapping(bytes32 => ZkFetchDscrResult) public zkFetchDscrResults;  // loanId => result
-    mapping(address => bytes32) public borrowerLatestLoanId;          // borrower => latest verified loanId
+    mapping(bytes32 => ZkFetchDscrResult) public zkFetchDscrResults;   // slot 12
+    mapping(address => bytes32) public borrowerLatestLoanId;           // slot 13
+
+    // ---- V2 additions (appended to preserve storage layout) ----
+    mapping(bytes32 => bool) public loanIdToDefaulted;                 // slot 14
+    mapping(bytes32 => uint256) public loanIdToRepaymentAmount;        // slot 15
 
     ////////////////////////////////////////////////
     // CONSTRUCTOR
@@ -150,7 +157,7 @@ contract SimpleLoanPool is
 		require(loanIdToBorrower[_loanId] == address(0), "Loan already exists");
 		_;
 	}
-	
+
 	modifier onlyActiveLoan(bytes32 _loanId) {
 		require(loanIdToActive[_loanId], "Loan is not active");
 		_;
@@ -230,7 +237,7 @@ contract SimpleLoanPool is
         loanIdToInterestRate[_loanId] = _interestRate;
         loanIdToRepaymentAmount[_loanId] = 0;
         loanIdToRepaymentRemainingMonths[_loanId] = _repaymentRemainingMonths;
-		
+
 		emit LoanCreated(_loanId, _borrower, _amount, _interestRate, _repaymentRemainingMonths);
     }
 
@@ -265,7 +272,7 @@ contract SimpleLoanPool is
 		uint256 remainingAmount = amount + interestAmount - repaidAmount;
 		uint256 interestRate = loanIdToInterestRate[_loanId];
 		uint256 repaymentRemainingMonths = loanIdToRepaymentRemainingMonths[_loanId];
-		
+
 		// Updated formula: multiply by 100 in denominator to account for basis points
 		return (remainingAmount, (remainingAmount * interestRate) / (12 * 10000 * repaymentRemainingMonths));
 	}

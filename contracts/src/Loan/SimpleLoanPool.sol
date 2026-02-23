@@ -43,6 +43,7 @@ contract SimpleLoanPool is
 	event LoanInterestRateUpdated(bytes32 loanId, uint256 interestRate);
 	event LoanRepaymentRemainingMonthsUpdated(bytes32 loanId, uint256 repaymentRemainingMonths);
 	event LoanRepaymentMade(bytes32 loanId, address borrower, uint256 repaymentAmount, uint256 interestAmount);
+	event LoanDefaulted(bytes32 loanId, address borrower, uint256 outstandingPrincipal, uint256 outstandingInterest);
 	event ProofVerifierUpdated(address indexed oldVerifier, address indexed newVerifier);
 	event LoanCreatedWithVerifiedDscr(bytes32 loanId, address borrower, uint256 amount, uint256 dscrValue, uint256 interestRate);
     event RelayServiceUpdated(address indexed oldRelay, address indexed newRelay);
@@ -64,6 +65,7 @@ contract SimpleLoanPool is
     IProofVerifier public proofVerifier;
 
     mapping(bytes32 => bool) public loanIdToActive;
+    mapping(bytes32 => bool) public loanIdToDefaulted;
     mapping(bytes32 => address) public loanIdToBorrower;
     mapping(bytes32 => uint256) public loanIdToAmount;
 	mapping(bytes32 => uint256) public loanIdToInterestAmount;
@@ -235,12 +237,19 @@ contract SimpleLoanPool is
 	/// @notice Activates a created loan and transfers funds to borrower
 	/// @param _loanId Unique identifier for the loan
 	function activateLoan(bytes32 _loanId) external whenNotPaused nonReentrant onlySystemOrPoolManager loanExists(_loanId) onlyInactiveLoan(_loanId) {
-		loanIdToActive[_loanId] = true;
-
 		uint256 amount = loanIdToAmount[_loanId];
 
+		// Check pool has sufficient liquidity before activating
+		require(
+			token.balanceOf(address(this)) >= amount,
+			"Insufficient pool liquidity for loan activation"
+		);
+
+		loanIdToActive[_loanId] = true;
         totalLentAmount += amount;
-		token.transfer(loanIdToBorrower[_loanId], amount);
+
+		bool success = token.transfer(loanIdToBorrower[_loanId], amount);
+		require(success, "Token transfer failed");
 
 		emit LoanActivated(_loanId, loanIdToBorrower[_loanId], amount);
 	}
@@ -297,7 +306,7 @@ contract SimpleLoanPool is
 		emit LoanRepaymentRemainingMonthsUpdated(_loanId, _repaymentRemainingMonths);
     }
 
-    /// @notice Allows a borrower to make a repayment on their loan
+    /// @notice Allows a borrower to make a full repayment on their loan
     /// @param _loanId Unique identifier for the loan
     function makeRepayment(
         bytes32 _loanId
@@ -336,6 +345,105 @@ contract SimpleLoanPool is
         }
 
         emit LoanRepaymentMade(_loanId, msg.sender, principalPayment, interestForPayment);
+    }
+
+    /// @notice Allows a borrower to make a partial repayment on their loan
+    /// @dev Interest is calculated proportionally based on the payment amount
+    /// @param _loanId Unique identifier for the loan
+    /// @param _amount Total amount to pay (includes both principal and interest portions)
+    function makePartialRepayment(
+        bytes32 _loanId,
+        uint256 _amount
+    ) external whenNotPaused nonReentrant loanExists(_loanId) onlyActiveLoan(_loanId) {
+        require(msg.sender == loanIdToBorrower[_loanId], "Only borrower can make repayments");
+        require(_amount > 0, "Amount must be greater than 0");
+
+        // Get remaining balances
+        uint256 remainingPrincipal = loanIdToAmount[_loanId] - loanIdToRepaymentAmount[_loanId];
+        uint256 remainingInterest = loanIdToInterestAmount[_loanId] - loanIdToInterestRepaymentAmount[_loanId];
+        uint256 totalRemaining = remainingPrincipal + remainingInterest;
+
+        require(remainingPrincipal > 0, "Loan is already fully repaid");
+        require(_amount <= totalRemaining, "Payment exceeds outstanding balance");
+
+        // Calculate proportional split: interest is paid first, then principal
+        uint256 interestPayment;
+        uint256 principalPayment;
+
+        if (_amount <= remainingInterest) {
+            // Payment only covers interest
+            interestPayment = _amount;
+            principalPayment = 0;
+        } else {
+            // Payment covers all remaining interest plus some principal
+            interestPayment = remainingInterest;
+            principalPayment = _amount - remainingInterest;
+        }
+
+        // Update totalLentAmount with only the principal portion
+        if (principalPayment > 0) {
+            totalLentAmount -= principalPayment;
+        }
+
+        // Transfer tokens from sender to pool
+        require(token.transferFrom(msg.sender, address(this), _amount), "Transfer failed");
+
+        // Update repayment tracking
+        loanIdToRepaymentAmount[_loanId] += principalPayment;
+        loanIdToInterestRepaymentAmount[_loanId] += interestPayment;
+
+        // If loan is fully repaid, mark it as inactive
+        if (loanIdToRepaymentAmount[_loanId] >= loanIdToAmount[_loanId]) {
+            loanIdToActive[_loanId] = false;
+        }
+
+        emit LoanRepaymentMade(_loanId, msg.sender, principalPayment, interestPayment);
+    }
+
+    /// @notice Marks a loan as defaulted
+    /// @dev Only callable by pool manager or approver. Loan must be active and have outstanding balance.
+    /// @param _loanId Unique identifier for the loan
+    function markLoanDefaulted(
+        bytes32 _loanId
+    ) external whenNotPaused loanExists(_loanId) onlyActiveLoan(_loanId) {
+        require(
+            hasRole(POOL_MANAGER_ROLE, msg.sender) || hasRole(APPROVER_ROLE, msg.sender),
+            "Must have pool manager or approver role"
+        );
+        require(!loanIdToDefaulted[_loanId], "Loan already defaulted");
+
+        // Calculate outstanding amounts
+        uint256 outstandingPrincipal = loanIdToAmount[_loanId] - loanIdToRepaymentAmount[_loanId];
+        uint256 outstandingInterest = loanIdToInterestAmount[_loanId] - loanIdToInterestRepaymentAmount[_loanId];
+
+        require(outstandingPrincipal > 0 || outstandingInterest > 0, "Loan has no outstanding balance");
+
+        // Mark loan as defaulted and inactive
+        loanIdToDefaulted[_loanId] = true;
+        loanIdToActive[_loanId] = false;
+
+        // Write off the outstanding principal from totalLentAmount
+        if (outstandingPrincipal > 0) {
+            totalLentAmount -= outstandingPrincipal;
+        }
+
+        emit LoanDefaulted(_loanId, loanIdToBorrower[_loanId], outstandingPrincipal, outstandingInterest);
+    }
+
+    /// @notice Checks if a loan has defaulted
+    /// @param _loanId Unique identifier for the loan
+    /// @return Whether the loan is in default status
+    function isLoanDefaulted(bytes32 _loanId) external view returns (bool) {
+        return loanIdToDefaulted[_loanId];
+    }
+
+    /// @notice Gets the outstanding balance for a loan
+    /// @param _loanId Unique identifier for the loan
+    /// @return outstandingPrincipal The remaining principal
+    /// @return outstandingInterest The remaining interest
+    function getLoanOutstanding(bytes32 _loanId) external view loanExists(_loanId) returns (uint256 outstandingPrincipal, uint256 outstandingInterest) {
+        outstandingPrincipal = loanIdToAmount[_loanId] - loanIdToRepaymentAmount[_loanId];
+        outstandingInterest = loanIdToInterestAmount[_loanId] - loanIdToInterestRepaymentAmount[_loanId];
     }
 
     ////////////////////////////////////////////////

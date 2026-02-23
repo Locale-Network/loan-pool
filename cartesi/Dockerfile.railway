@@ -1,0 +1,11 @@
+# syntax=docker.io/docker/dockerfile:1
+FROM cartesi/rollups-node:1.5.1
+
+ENV CARTESI_SNAPSHOT_DIR=/usr/share/rollups-node/snapshot
+ENV CARTESI_HTTP_ADDRESS=0.0.0.0
+
+COPY --chown=cartesi:cartesi .cartesi/image /usr/share/rollups-node/snapshot
+
+EXPOSE 10000
+
+CMD ["cartesi-rollups-node"]

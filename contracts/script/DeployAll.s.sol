@@ -7,7 +7,7 @@ import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // Core contracts
-import {SimpleLoanPool} from "../src/Loan/SimpleLoanPool.sol";
+import {CreditTreasuryPool} from "../src/Loan/CreditTreasuryPool.sol";
 import {StakingPool} from "../src/Staking/StakingPool.sol";
 import {UpgradeableCommunityToken} from "../src/ERC20/UpgradeableCommunityToken.sol";
 
@@ -58,20 +58,20 @@ contract DeployAllScript is Script {
         token = address(new ERC1967Proxy(tokenImpl, tokenData));
         console.log("   Token (lUSD):", token);
 
-        // 2. Deploy SimpleLoanPool
+        // 2. Deploy CreditTreasuryPool
         console.log("");
-        console.log("2. Deploying SimpleLoanPool...");
-        address loanPoolImpl = address(new SimpleLoanPool());
+        console.log("2. Deploying CreditTreasuryPool...");
+        address loanPoolImpl = address(new CreditTreasuryPool());
 
         address[] memory approvers = new address[](1);
         approvers[0] = deployer;
 
         bytes memory loanPoolData = abi.encodeCall(
-            SimpleLoanPool.initialize,
+            CreditTreasuryPool.initialize,
             (deployer, approvers, ERC20Upgradeable(token))
         );
         loanPool = address(new ERC1967Proxy(loanPoolImpl, loanPoolData));
-        console.log("   SimpleLoanPool:", loanPool);
+        console.log("   CreditTreasuryPool:", loanPool);
 
         // 3. Deploy StakingPool
         console.log("");
@@ -154,7 +154,10 @@ contract DeployAllScript is Script {
             keccak256("default-pool"),
             "Default Pool",
             100 * 1e6, // 100 lUSD minimum stake
-            100        // 1% fee (100 basis points)
+            100,       // 1% fee (100 basis points)
+            60,        // 60 seconds cooldown for testing
+            0,         // No maturity date
+            address(0) // No eligibility registry
         );
         console.log("   Created default staking pool");
     }

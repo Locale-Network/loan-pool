@@ -15,17 +15,14 @@ src/
 │   └── IPoolVault.sol
 ├── Staking/                  # Staking pool contracts
 │   └── StakingPool.sol
-└── Verification/             # ZK proof verification
-    ├── ProofVerifierGroth16.sol  # Main verifier wrapper
-    ├── KYCVerifier.sol           # snarkjs-generated KYC verifier
-    ├── DSCRVerifier.sol          # snarkjs-generated DSCR verifier
-    └── PlaidCommitmentVerifier.sol
+└── NFT/                      # Soulbound credential NFTs
+    ├── BorrowerCredential.sol
+    └── InvestorCredential.sol
 ```
 
 ## Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/getting-started/installation)
-- Node.js 18+ (for ZK circuit compilation)
 - An RPC endpoint (Anvil for local, or Arbitrum Sepolia/Mainnet)
 
 ## Setup
@@ -40,26 +37,6 @@ forge build
 # Run tests
 forge test
 ```
-
-## ZK Circuits Setup
-
-Before deploying the verification contracts, you need to compile the ZK circuits and generate the proving keys:
-
-```bash
-cd ../zk-circuits
-
-# Install dependencies
-npm install
-
-# Download Powers of Tau
-./scripts/download-ptau.sh
-
-# Compile circuits and generate verifiers
-./scripts/compile.sh
-./scripts/export-verifier.sh
-```
-
-The verifiers are automatically copied to `src/Verification/`.
 
 ## Environment Variables
 
@@ -159,9 +136,9 @@ forge verify-contract <CONTRACT_ADDRESS> \
 
 ## Security Considerations
 
-1. **ZK Proofs**: The verifier contracts use Groth16 proofs generated from trusted setup. Never expose the toxic waste from the trusted setup ceremony.
+1. **Verification**: Proof verification is handled off-chain via Cartesi rollups with zkFetch (Reclaim Protocol). On-chain contracts receive verified data through Cartesi notices.
 
-2. **Nullifiers**: Each proof can only be used once via nullifier tracking to prevent replay attacks.
+2. **Soulbound NFTs**: BorrowerCredential and InvestorCredential are non-transferable tokens minted after KYC/AML verification.
 
 3. **Upgradability**: SimpleLoanPool and other core contracts use UUPS proxy pattern. The upgrade function is protected by access control.
 
@@ -171,10 +148,10 @@ forge verify-contract <CONTRACT_ADDRESS> \
 
 | Operation | Gas |
 |-----------|-----|
-| KYC Proof Verification | ~280,000 |
-| DSCR Proof Verification | ~320,000 |
-| Loan Request | ~150,000 |
+| Create Loan | ~150,000 |
+| Activate Loan | ~80,000 |
 | Stake | ~100,000 |
+| Unstake | ~90,000 |
 
 ## Foundry Commands Reference
 

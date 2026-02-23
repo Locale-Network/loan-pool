@@ -101,11 +101,17 @@ contract StakingPoolScript is Script {
     /// @param name Pool name
     /// @param minimumStake Minimum stake amount
     /// @param feeRate Fee rate in basis points
+    /// @param cooldownPeriod Per-pool cooldown period in seconds
+    /// @param maturityDate Unix timestamp when investors can withdraw principal (0 = no maturity)
+    /// @param eligibilityRegistry Address of EligibilityRegistry for Reg D 506(b) (address(0) = no eligibility check)
     function createPool(
         bytes32 poolId,
         string calldata name,
         uint256 minimumStake,
-        uint256 feeRate
+        uint256 feeRate,
+        uint256 cooldownPeriod,
+        uint256 maturityDate,
+        address eligibilityRegistry
     ) public {
         uint256 deployerPrivateKey = isAnvil()
             ? vm.envUint("ANVIL_PRIVATE_KEY")
@@ -113,7 +119,7 @@ contract StakingPoolScript is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        stakingPool.createPool(poolId, name, minimumStake, feeRate);
+        stakingPool.createPool(poolId, name, minimumStake, feeRate, cooldownPeriod, maturityDate, eligibilityRegistry);
 
         console.log("Pool created:", name);
 

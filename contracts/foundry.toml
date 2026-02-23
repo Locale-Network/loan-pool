@@ -12,6 +12,7 @@ remappings = [
 optimize = true
 optimizer_runs = 200
 solc = "0.8.22"
+via_ir = true
 
 ffi = true
 ast = true

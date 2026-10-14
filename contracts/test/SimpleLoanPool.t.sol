@@ -162,13 +162,13 @@ contract SimpleLoanPoolTest is Test {
         pool.createLoan(loanId1, borrower, 1000 * 1e6, 1000, 12);
         pool.activateLoan(loanId1);
 
-        // Get values from contract
-        (, uint256 interestForPayment) = pool.getNextRepayment(loanId1);
+        // Full repayment settles ALL remaining scheduled interest, not one period
+        uint256 interestForPayment = pool.loanIdToInterestAmount(loanId1) - pool.loanIdToInterestRepaymentAmount(loanId1);
 
         // Remaining principal = original amount - repaid amount (0 at start)
         uint256 remainingPrincipal = pool.loanIdToAmount(loanId1) - pool.loanIdToRepaymentAmount(loanId1);
 
-        // Total payment = principal + interest for this payment
+        // Total payment = principal + all remaining interest
         uint256 totalPayment = remainingPrincipal + interestForPayment;
 
         // Borrower approves pool to spend USDC

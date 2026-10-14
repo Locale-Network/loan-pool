@@ -407,7 +407,7 @@ contract StakingPool is
     }
 
     /// @notice Claims accrued yield without touching principal (available anytime)
-    /// @dev Yield is the difference between current stake value and principal minus already claimed
+    /// @dev Yield is the difference between current stake value and principal
     /// @param _poolId Pool identifier
     function claimYield(bytes32 _poolId) external whenNotPaused nonReentrant {
         Pool storage pool = pools[_poolId];
@@ -419,10 +419,12 @@ contract StakingPool is
         // Calculate current value of user's shares
         uint256 currentValue = (userStake.shares * pool.totalStaked) / pool.totalShares;
 
-        // Yield = current value - principal - already claimed
+        // Yield = current value - principal. Claimed yield is NOT subtracted: claiming
+        // burns shares worth the claimed amount, so it has already left currentValue.
+        // claimedYield is a lifetime statistic only.
         uint256 availableYield = 0;
-        if (currentValue > userStake.principal + userStake.claimedYield) {
-            availableYield = currentValue - userStake.principal - userStake.claimedYield;
+        if (currentValue > userStake.principal) {
+            availableYield = currentValue - userStake.principal;
         }
 
         if (availableYield == 0) revert NoYieldToClaim();
@@ -465,10 +467,10 @@ contract StakingPool is
         // Calculate total value of user's shares
         uint256 totalValue = (userStake.shares * pool.totalStaked) / pool.totalShares;
 
-        // Amount to withdraw = total value - already claimed yield
-        uint256 withdrawAmount = totalValue > userStake.claimedYield
-            ? totalValue - userStake.claimedYield
-            : 0;
+        // Amount to withdraw = full current value of remaining shares. Previously claimed
+        // yield was paid out by burning shares in claimYield(), so subtracting it again
+        // here would charge the staker twice and strand that amount in the pool.
+        uint256 withdrawAmount = totalValue;
 
         if (withdrawAmount == 0) revert ZeroAmount();
 
@@ -689,9 +691,9 @@ contract StakingPool is
         // Calculate current value of user's shares
         uint256 currentValue = (userStake.shares * pool.totalStaked) / pool.totalShares;
 
-        // Yield = current value - principal - already claimed
-        if (currentValue > userStake.principal + userStake.claimedYield) {
-            return currentValue - userStake.principal - userStake.claimedYield;
+        // Yield = current value - principal (claimed yield already left via burned shares)
+        if (currentValue > userStake.principal) {
+            return currentValue - userStake.principal;
         }
 
         return 0;

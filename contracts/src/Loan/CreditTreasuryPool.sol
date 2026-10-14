@@ -321,13 +321,18 @@ contract CreditTreasuryPool is
         // Verify the sender is the borrower
         require(msg.sender == loanIdToBorrower[_loanId], "Only borrower can make repayments");
 
-        // Get interest for this payment period from getNextRepayment
-        // Note: First return value (remainingTotal) is not used here as we calculate principal separately
-        (, uint256 interestForPayment) = getNextRepayment(_loanId);
-
         // Calculate remaining principal balance (excludes interest)
         uint256 remainingPrincipal = loanIdToAmount[_loanId] - loanIdToRepaymentAmount[_loanId];
         require(remainingPrincipal > 0, "Loan is already fully repaid");
+
+        // Full repayment closes the loan, so it must settle ALL outstanding scheduled
+        // interest, not a single period's worth. This matches makePartialRepayment,
+        // which requires remaining principal + remaining interest to close a loan.
+        // Saturating subtraction: updateLoanInterestRate / updateLoanRepaymentRemainingMonths
+        // recompute loanIdToInterestAmount and can leave it below interest already paid.
+        uint256 scheduledInterest = loanIdToInterestAmount[_loanId];
+        uint256 interestPaid = loanIdToInterestRepaymentAmount[_loanId];
+        uint256 interestForPayment = scheduledInterest > interestPaid ? scheduledInterest - interestPaid : 0;
 
         // Calculate how much principal to pay this period
         // Since this is a single full repayment, we pay all remaining principal
